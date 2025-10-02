@@ -40,28 +40,69 @@ def deploy(name: str):
             enable_tracing=True,
         )
 
+    # Search for existing deployment
+    existing_deployment = None
+    print(f"Searching for existing deployments named '{name}'...")
+    try:
+        deployments = client.agent_engines.list()
+        for deployment in deployments:
+            if deployment.api_resource.display_name == name:
+                existing_deployment = deployment
+                break
+    except Exception as e:
+        print(f"Warning: Could not list existing deployments. Will attempt to create a new one. Error: {e}")
 
-    # Now deploy to Agent Engine
-    remote_app = client.agent_engines.create(
-        agent=app,
-        config={
-            "displayName": name,
-            "staging_bucket": STAGING_BUCKET,
-            "requirements" : [
-                "google-cloud-aiplatform[agent_engines,adk]==1.117.0", #[adk,agent_engines]
-                "cloudpickle==3.1.1",
-                "pydantic==2.11.9",
-                "google-adk==1.15.1",
-            ],
-            "extra_packages": 
-                ["./app"],
-        },
-    )
+    resource_name = None
+    if existing_deployment:
+        print(f"Found existing deployment: {existing_deployment.api_resource.name}. Attempting to update.")
+        try:
+            remote_app = client.agent_engines.update(
+                name=existing_deployment.api_resource.name,
+                agent=app,
+                config={
+                    "displayName": name,
+                    "staging_bucket": STAGING_BUCKET,
+                    "requirements" : [
+                        "google-cloud-aiplatform[agent_engines,adk]==1.117.0",
+                        "cloudpickle==3.1.1",
+                        "pydantic==2.11.9",
+                        "google-adk==1.15.1",
+                    ],
+                    "extra_packages": ["./app"],
+                },
+            )
+            print(f"Successfully updated deployment: {remote_app.api_resource.name}")
+            resource_name = remote_app.api_resource.name
+        except Exception as e:
+            print(f"ERROR: Failed to update deployment: {e}")
+            return # Stop if update fails
 
-    resource_name = remote_app.api_resource.name
-    print(f"Created remote app: {resource_name}")
-    save_engine({"resource_name": resource_name, "agent_name": name})
-    print(f"Resource name and agent name saved to {ENGINE_FILE}")
+    else:
+        print(f"No existing agent found with name '{name}'. Creating a new one.")
+        try:
+            remote_app = client.agent_engines.create(
+                agent=app,
+                config={
+                    "displayName": name,
+                    "staging_bucket": STAGING_BUCKET,
+                    "requirements" : [
+                        "google-cloud-aiplatform[agent_engines,adk]==1.117.0",
+                        "cloudpickle==3.1.1",
+                        "pydantic==2.11.9",
+                        "google-adk==1.15.1",
+                    ],
+                    "extra_packages": ["./app"],
+                },
+            )
+            print(f"Created remote app: {remote_app.api_resource.name}")
+            resource_name = remote_app.api_resource.name
+        except Exception as e:
+            print(f"ERROR: Failed to create deployment: {e}")
+            return # Stop if create fails
+
+    if resource_name:
+        save_engine({"resource_name": resource_name, "agent_name": name})
+        print(f"Resource name and agent name saved to {ENGINE_FILE}")
 
 def hello():
     print("Hello, Alifarma!")
